@@ -1,26 +1,51 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
+	"net/http"
 
 	"github.com/Michela-DC/review-finder-clients/mockclient"
-	"github.com/Michela-DC/review-finder/interfaces"
+
+	"github.com/Michela-DC/review-finder/domain"
 )
 
 func main() {
-	var (
-		ac interfaces.AnimeClient = &mockclient.Animes{}
-		gc interfaces.GameClient  = &mockclient.Games{}
-		mc interfaces.MovieClient = &mockclient.Movies{}
-	)
+	//web server http
+	mux := http.NewServeMux()
+	// todo: generalizzare l'handleFunction per gestire tutti i tipi di richiesta (movie, anime, games)
+	// todo: rendere i clients injectable
+	// todo: resolve client based on endpoint
+	// todo: move server to infrastracture folder
+	// todo: move api in-out to domain
+	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Query().Get("name")
 
-	printResponse(ac.FindAnimes("animename"))
-	printResponse(gc.FindGames("gamename"))
-	printResponse(mc.FindMovies("moviename"))
-}
+		if name == "" {
+			w.Write([]byte(`{"error": "missing name query parameter"}`))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
-func printResponse[T any](in []*T) {
-	for _, i := range in {
-		fmt.Printf("%+v\n", i)
-	}
+		mc := &mockclient.Movies{}
+		mcResp := mc.FindMovies(name)
+
+		resp := make([]*domain.Movie, len(mcResp))
+		for i, r := range mcResp {
+			resp[i] = &domain.Movie{
+				Title:       r.Title,
+				Description: r.Description + " from review finder",
+				Rating:      r.Rating,
+			}
+		}
+
+		b, err := json.Marshal(resp)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(b)
+	})
+	http.ListenAndServe(":8080", mux)
+
 }
